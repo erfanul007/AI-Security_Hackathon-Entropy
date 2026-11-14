@@ -1,0 +1,3 @@
+# raw extraction output: kept locally, never published
+*.json
+*.jsonl
