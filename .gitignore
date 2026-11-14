@@ -1,2 +1,13 @@
 .env
 __pycache__/
+.venv/
+.DS_Store
+
+# runtime output: btm.py appends every call here
+logs/
+
+# ehr-explorer build/runtime
+node_modules/
+dist/
+ehr-explorer/data/
+*.db
