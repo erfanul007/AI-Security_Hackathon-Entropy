@@ -246,3 +246,45 @@ def test_seed_deterministic(tmp_path):
     seedmod.seed(b)
     q = "SELECT * FROM patients ORDER BY patient_id"
     assert sqlite3.connect(a).execute(q).fetchall() == sqlite3.connect(b).execute(q).fetchall()
+
+
+SERIES = ("enc_by_month", "enc_by_dept", "enc_by_type", "patients_by_payer", "plan_type_mix", "claims_by_status",
+          "charge_vs_paid", "top_problems")
+
+
+@pytest.fixture
+def seeded(tmp_path):
+    app.DB_PATH = tmp_path / "demo.db"
+    seedmod.seed(app.DB_PATH)
+    app.init_db()
+    return TestClient(app.app)
+
+
+def test_dashboard_seeded(seeded):
+    d = seeded.get("/api/dashboard").json()
+    assert d["kpis"]["patients"] == 60
+    assert all(d["kpis"][k] > 0 for k in ("encounters", "providers", "employees", "facilities", "open_claims"))
+    for s in SERIES:
+        assert d[s], s
+    assert set(d["enc_by_month"][0]) == {"month", "AMB", "EMER", "IMP", "VR"}
+    assert len(d["enc_by_type"]) <= 10 and len(d["top_problems"]) <= 10
+    assert {"name", "charged", "paid"} == set(d["charge_vs_paid"][0])
+
+
+def test_dashboard_empty(client):
+    d = client.get("/api/dashboard").json()
+    assert all(v == 0 for v in d["kpis"].values())
+    assert all(d[s] == [] for s in SERIES)
+
+
+def test_patient_bundle(seeded):
+    with app.connect() as c:
+        pid = c.execute("SELECT patient_id FROM encounters LIMIT 1").fetchone()[0]
+    b = seeded.get(f"/api/patients/{pid}").json()
+    for k in ("patient", "pcp", "coverages", "contacts", "allergies", "problems", "social_history", "encounters", "notes",
+              "medications", "immunizations", "procedures", "lab_orders", "vitals", "screenings", "claims", "payments"):
+        assert k in b, k
+    assert b["patient"]["patient_id"] == pid and b["encounters"]
+    assert all(isinstance(o["results"], list) for o in b["lab_orders"])
+    assert [c["coverage_priority"] for c in b["coverages"]] == sorted(c["coverage_priority"] for c in b["coverages"])
+    assert seeded.get("/api/patients/999999").status_code == 404

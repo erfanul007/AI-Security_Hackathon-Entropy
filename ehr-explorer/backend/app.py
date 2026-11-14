@@ -242,3 +242,77 @@ def options(t: str, q: str = ""):
         rows = conn.execute(f"SELECT * FROM (SELECT x.{pk} AS id, {label_sql(t)} AS label FROM {t} x) "
                             f"WHERE label LIKE ? ESCAPE '\\' ORDER BY label LIMIT 50", (pat,)).fetchall()
     return [dict(r) for r in rows]
+
+
+OPEN_CLAIMS = ("Submitted", "Pending", "Appealed", "Not Submitted")
+
+
+@app.get("/api/dashboard")
+def dashboard():
+    with connect() as conn:
+        def rows(sql, *args):
+            return [dict(r) for r in conn.execute(sql, args)]
+
+        def n(sql, *args):
+            return conn.execute(sql, args).fetchone()[0]
+
+        kpis = {t: n(f"SELECT COUNT(*) FROM {t}") for t in ("patients", "encounters", "providers", "employees", "facilities")}
+        kpis["open_claims"] = n(f"SELECT COUNT(*) FROM claims WHERE status IN ({','.join('?' * len(OPEN_CLAIMS))})", *OPEN_CLAIMS)
+        return {
+            "kpis": kpis,
+            "enc_by_month": rows("SELECT substr(start_datetime,1,7) AS month, "
+                                 + ", ".join(f"SUM(encounter_class='{c}') AS {c}" for c in ("AMB", "EMER", "IMP", "VR"))
+                                 + " FROM encounters GROUP BY month ORDER BY month"),
+            "enc_by_dept": rows("SELECT d.department_name AS name, COUNT(*) AS n FROM encounters e "
+                                "JOIN departments d USING (department_id) GROUP BY name ORDER BY n DESC"),
+            "enc_by_type": rows("SELECT encounter_type AS name, COUNT(*) AS n FROM encounters GROUP BY name ORDER BY n DESC LIMIT 10"),
+            "patients_by_payer": rows("SELECT y.payer_name AS name, COUNT(DISTINCT c.patient_id) AS n FROM patient_coverage c "
+                                      "JOIN insurance_plans p USING (plan_id) JOIN payers y ON y.payer_id = p.payer_id "
+                                      "WHERE c.coverage_priority = 1 GROUP BY name ORDER BY n DESC"),
+            "plan_type_mix": rows("SELECT p.plan_type AS name, COUNT(*) AS n FROM patient_coverage c "
+                                  "JOIN insurance_plans p USING (plan_id) GROUP BY name ORDER BY n DESC"),
+            "claims_by_status": rows("SELECT status AS name, COUNT(*) AS n FROM claims GROUP BY name ORDER BY n DESC"),
+            "charge_vs_paid": rows("SELECT y.payer_name AS name, ROUND(SUM(c.total_charge),2) AS charged, "
+                                   "ROUND(SUM(COALESCE(c.paid_amount,0)),2) AS paid FROM claims c "
+                                   "JOIN payers y USING (payer_id) GROUP BY name ORDER BY charged DESC"),
+            "top_problems": rows("SELECT description AS name, COUNT(*) AS n FROM problem_list GROUP BY name ORDER BY n DESC LIMIT 10"),
+        }
+
+
+@app.get("/api/patients/{pid}")
+def patient_detail(pid: int):
+    with connect() as conn:
+        def rows(sql, *args):
+            return [dict(r) for r in conn.execute(sql, args)]
+
+        patient = fetch(conn, "patients", pid)
+        pcp = conn.execute(f"SELECT x.*, {label_sql('providers')} AS label FROM providers x WHERE x.provider_id = ?",
+                           (patient["pcp_provider_id"],)).fetchone()
+        def by_patient(t, order):
+            return rows(f"SELECT * FROM {t} WHERE patient_id = ? ORDER BY {order}", pid)
+
+        labs = by_patient("lab_orders", "order_datetime DESC")
+        for o in labs:
+            o["results"] = rows("SELECT * FROM lab_results WHERE lab_order_id = ? ORDER BY lab_result_id", o["lab_order_id"])
+        social = by_patient("social_history", "patient_id")
+        return {
+            "patient": patient,
+            "pcp": dict(pcp) if pcp else None,
+            "coverages": rows("SELECT c.*, p.plan_name, p.plan_type FROM patient_coverage c JOIN insurance_plans p USING (plan_id) "
+                              "WHERE c.patient_id = ? ORDER BY c.coverage_priority", pid),
+            "contacts": by_patient("patient_contacts", "contact_id"),
+            "allergies": by_patient("allergies", "recorded_date DESC"),
+            "problems": by_patient("problem_list", "noted_date DESC"),
+            "social_history": social[0] if social else None,
+            "encounters": rows("SELECT e.*, d.department_name FROM encounters e JOIN departments d USING (department_id) "
+                               "WHERE e.patient_id = ? ORDER BY e.start_datetime DESC", pid),
+            "notes": by_patient("clinical_notes", "note_datetime DESC"),
+            "medications": by_patient("medications", "start_date DESC"),
+            "immunizations": by_patient("immunizations", "administered_date DESC"),
+            "procedures": by_patient("procedures", "performed_datetime DESC"),
+            "lab_orders": labs,
+            "vitals": by_patient("vitals", "recorded_datetime DESC"),
+            "screenings": by_patient("screenings", "administered_datetime DESC"),
+            "claims": by_patient("claims", "service_date_from DESC"),
+            "payments": by_patient("patient_payments", "payment_date DESC"),
+        }
