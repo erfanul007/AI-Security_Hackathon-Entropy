@@ -316,3 +316,11 @@ def patient_detail(pid: int):
             "claims": by_patient("claims", "service_date_from DESC"),
             "payments": by_patient("patient_payments", "payment_date DESC"),
         }
+
+
+# single-process mode: serve the built frontend; registered last so /api routes win
+DIST = HERE.parent / "frontend" / "dist"
+if DIST.is_dir():
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=DIST, html=True), name="frontend")
