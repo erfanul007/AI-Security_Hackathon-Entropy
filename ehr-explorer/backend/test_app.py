@@ -1,8 +1,16 @@
+import os
+import sqlite3
+import subprocess
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
 
 import app
 import rules
+import seed as seedmod
+
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 @pytest.fixture
@@ -204,3 +212,37 @@ def test_claim_cascades_lines(client):
     post(client, "claim_lines", dict(claim_id=c["claim_id"], line_number=1, charge_code="C1", units=1, charge_amount=100))
     assert client.delete(f"/api/tables/claims/{c['claim_id']}").status_code == 200
     assert count("claim_lines", "claim_id = ?", c["claim_id"]) == 0
+
+
+
+def test_seed_refuses_prod(tmp_path):
+    r = subprocess.run([sys.executable, "seed.py"], cwd=HERE, env=os.environ | {"APP_ENV": "prod"}, capture_output=True)
+    assert r.returncode != 0
+    with pytest.raises(SystemExit):
+        seedmod.seed(tmp_path / "prod.db")
+
+
+def test_seed_valid(tmp_path):
+    db = tmp_path / "demo.db"
+    seedmod.seed(db)
+    c = sqlite3.connect(db)
+    assert c.execute("PRAGMA foreign_key_check").fetchall() == []
+    tables = [t for ts in rules.GROUPS.values() for t in ts]
+    assert len(tables) == 30
+    for t in tables:
+        assert c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] > 0, t
+    for key, allowed in rules.STRICT.items():
+        t, col = key.split(".")
+        bad = c.execute(f"SELECT DISTINCT {col} FROM {t} WHERE {col} IS NOT NULL AND {col} NOT IN "
+                        f"({','.join('?' * len(allowed))})", allowed).fetchall()
+        assert bad == [], (key, bad)
+    assert c.execute("SELECT COUNT(*) FROM patients WHERE ssn NOT LIKE '900-%'").fetchone()[0] == 0
+    assert c.execute("SELECT COUNT(*) FROM patients").fetchone()[0] == 60
+
+
+def test_seed_deterministic(tmp_path):
+    a, b = tmp_path / "a.db", tmp_path / "b.db"
+    seedmod.seed(a)
+    seedmod.seed(b)
+    q = "SELECT * FROM patients ORDER BY patient_id"
+    assert sqlite3.connect(a).execute(q).fetchall() == sqlite3.connect(b).execute(q).fetchall()
