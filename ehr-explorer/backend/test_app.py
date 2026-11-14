@@ -133,3 +133,74 @@ def test_fk_label_and_options(client):
     assert "Doe, Jane" in rows[0]["employee_id_label"]
     opts = client.get("/api/options/providers", params={"q": "Doe"}).json()
     assert opts == [{"id": rows[0]["provider_id"], "label": "Doe, Jane · MD"}]
+
+
+def count(t, where, *args):
+    with app.connect() as c:
+        return c.execute(f"SELECT COUNT(*) FROM {t} WHERE {where}", args).fetchone()[0]
+
+
+def coverage(client, pid):
+    payer = post(client, "payers", dict(payer_name="Acme", payer_type="Commercial", edi_payer_id="E1"))
+    plan = post(client, "insurance_plans", dict(payer_id=payer["payer_id"], plan_name="Acme PPO", plan_type="PPO"))
+    return post(client, "patient_coverage", dict(patient_id=pid, plan_id=plan["plan_id"], coverage_priority=1, member_id="M1",
+                                                 relationship_to_subscriber="Self", effective_date="2024-01-01"))
+
+
+def test_delete_blocked(client):
+    f, d, _, _ = org(client)
+    pid = post(client, "patients", PATIENT)["patient_id"]
+    encounter(client, pid, f, d)
+    r = client.delete(f"/api/tables/patients/{pid}")
+    assert r.status_code == 409 and r.json()["detail"] == "Used by 1 encounters"
+
+
+def test_patient_cascade(client):
+    pid = post(client, "patients", PATIENT)["patient_id"]
+    post(client, "patient_contacts", dict(patient_id=pid, first_name="Bo", last_name="Lee", relationship="Brother",
+                                          is_emergency_contact=True, is_legal_guardian=False, is_healthcare_poa=False))
+    coverage(client, pid)
+    post(client, "allergies", dict(patient_id=pid, allergen="Peanut", allergen_type="Food", status="Active", recorded_date="2024-01-01"))
+    post(client, "problem_list", dict(patient_id=pid, icd10_code="E11.9", description="T2DM", noted_date="2024-01-01", status="Active"))
+    post(client, "social_history", dict(patient_id=pid, tobacco_status="Never smoker"))
+    post(client, "medications", dict(patient_id=pid, medication_name="Metformin", start_date="2024-01-01", status="Active",
+                                     is_controlled_substance=False))
+    post(client, "immunizations", dict(patient_id=pid, cvx_code="141", vaccine_name="Flu", administered_date="2024-10-01"))
+    post(client, "patient_payments", dict(patient_id=pid, payment_date="2024-02-01", amount=20, payment_method="Cash"))
+    assert client.delete(f"/api/tables/patients/{pid}").status_code == 200
+    for t in ("patient_contacts", "patient_coverage", "allergies", "problem_list", "social_history", "medications",
+              "immunizations", "patient_payments"):
+        assert count(t, "patient_id = ?", pid) == 0, t
+
+
+def test_related_patient_blocks(client):
+    a = post(client, "patients", PATIENT)["patient_id"]
+    b = post(client, "patients", PATIENT | {"mrn": "DEMO000002"})["patient_id"]
+    post(client, "patient_contacts", dict(patient_id=b, related_patient_id=a, first_name="Ann", last_name="Lee",
+                                          relationship="Sister", is_emergency_contact=True, is_legal_guardian=False,
+                                          is_healthcare_poa=False))
+    assert client.delete(f"/api/tables/patients/{a}").status_code == 409
+
+
+def test_integrity_maps_409(client):
+    f, d, _, _ = org(client)
+    p1 = post(client, "patients", PATIENT)["patient_id"]
+    p2 = post(client, "patients", PATIENT | {"mrn": "DEMO000002"})["patient_id"]
+    cov = coverage(client, p1)
+    encounter(client, p2, f, d, primary_coverage_id=cov["coverage_id"])
+    r = client.delete(f"/api/tables/patients/{p1}")
+    assert r.status_code == 409, r.text
+    assert count("patient_coverage", "patient_id = ?", p1) == 1
+
+
+def test_claim_cascades_lines(client):
+    f, d, _, _ = org(client)
+    pid = post(client, "patients", PATIENT)["patient_id"]
+    e = encounter(client, pid, f, d)
+    post(client, "chargemaster", dict(charge_code="C1", description="Visit", revenue_code="0510", standard_charge=100))
+    c = post(client, "claims", dict(claim_number="DEMO-CLM-1", encounter_id=e["encounter_id"], patient_id=pid, claim_type="837P",
+                                    billing_npi="9990000001", service_date_from="2026-01-01", service_date_to="2026-01-01",
+                                    total_charge=100, status="Paid"))
+    post(client, "claim_lines", dict(claim_id=c["claim_id"], line_number=1, charge_code="C1", units=1, charge_amount=100))
+    assert client.delete(f"/api/tables/claims/{c['claim_id']}").status_code == 200
+    assert count("claim_lines", "claim_id = ?", c["claim_id"]) == 0

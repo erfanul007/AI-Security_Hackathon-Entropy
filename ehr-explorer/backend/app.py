@@ -204,12 +204,33 @@ def update_row(t: str, pk: str, body: dict = Body(...)):
         return fetch(conn, t, old[pkcol])
 
 
+def blockers(conn, t: str, pk) -> list[tuple[str, int]]:
+    """Non-cascaded rows referencing t[pk], as (table, count) with count > 0."""
+    skip = set(rules.CASCADE.get(t, []))
+    counts: dict[str, int] = {}
+    for child, m in META.items():
+        for c in m["columns"]:
+            if c["fk"] == t and (child, c["name"]) not in skip:
+                n = conn.execute(f"SELECT COUNT(*) FROM {child} WHERE {c['name']} = ?", (pk,)).fetchone()[0]
+                if n:
+                    counts[child] = counts.get(child, 0) + n
+    return list(counts.items())
+
+
 @app.delete("/api/tables/{t}/{pk}")
 def delete_row(t: str, pk: str):
     pkcol = tmeta(t)["pk"]
     with connect() as conn:
-        fetch(conn, t, pk)
-        write(conn, f"DELETE FROM {t} WHERE {pkcol} = ?", (pk,))
+        pk = fetch(conn, t, pk)[pkcol]
+        if used := blockers(conn, t, pk):
+            raise HTTPException(409, "Used by " + ", ".join(f"{n} {child}" for child, n in used))
+        try:
+            for child, col in rules.CASCADE.get(t, []):
+                conn.execute(f"DELETE FROM {child} WHERE {col} = ?", (pk,))
+            conn.execute(f"DELETE FROM {t} WHERE {pkcol} = ?", (pk,))
+        except sqlite3.IntegrityError:
+            # a cascaded child is still referenced elsewhere; the `with` block rolls everything back
+            raise HTTPException(409, "Still referenced by other records")
     return {"deleted": pk}
 
 
