@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { type Meta, type Row, type Rows, get, show } from './api'
+import { type Meta, type Row, type Rows, fmt, get, nice, show } from './api'
 import RowForm from './RowForm'
 
 const PAGE = 50
 
-type Props = { t: string; meta: Meta; onPatient: (id: number) => void; editPk?: string }
+type Props = { t: string; meta: Meta; onPatient: (id: number) => void; editPk?: string; onCloseEdit: () => void }
 
-export default function TableView({ t, meta, onPatient, editPk }: Props) {
+export default function TableView({ t, meta, onPatient, editPk, onCloseEdit }: Props) {
   const { pk, columns } = meta.tables[t]
   const [page, setPage] = useState(1)
   const [q, setQ] = useState('')
@@ -47,8 +47,8 @@ export default function TableView({ t, meta, onPatient, editPk }: Props) {
   return (
     <section className="table-view">
       <header className="toolbar">
-        <h1>{t}</h1>
-        <input type="search" placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} aria-label={`Search ${t}`} />
+        <h1>{nice(t)}</h1>
+        <input type="search" placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} aria-label={`Search ${nice(t)}`} />
         <button onClick={() => setEditing('new')}>Add</button>
       </header>
       {error && <p className="error" role="alert">{error}</p>}
@@ -62,7 +62,7 @@ export default function TableView({ t, meta, onPatient, editPk }: Props) {
                 {columns.map(c => (
                   <th key={c.name} aria-sort={sort === c.name ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
                     <button className="th" onClick={() => sortBy(c.name)}>
-                      {c.name}{sort === c.name ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      {nice(c.name, !!c.fk)}{sort === c.name ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </button>
                   </th>
                 ))}
@@ -71,9 +71,10 @@ export default function TableView({ t, meta, onPatient, editPk }: Props) {
             <tbody>
               {data?.rows.map(r => (
                 <tr key={show(r[pk])} onClick={() => open(r)} tabIndex={0} onKeyDown={e => e.key === 'Enter' && open(r)}>
-                  {columns.map(c => (
-                    <td key={c.name} title={show(r[c.name])}>{show(c.fk ? (r[`${c.name}_label`] ?? r[c.name]) : r[c.name])}</td>
-                  ))}
+                  {columns.map(c => {
+                    const text = c.fk ? show(r[`${c.name}_label`] ?? r[c.name]) : fmt(c, r[c.name])
+                    return <td key={c.name} title={text}>{text}</td>
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -93,7 +94,7 @@ export default function TableView({ t, meta, onPatient, editPk }: Props) {
           t={t}
           meta={meta}
           row={editing === 'new' ? null : editing}
-          onDone={changed => { setEditing(null); if (changed) setReload(n => n + 1) }}
+          onDone={changed => { setEditing(null); if (changed) setReload(n => n + 1); if (editPk) onCloseEdit() }}
         />
       )}
     </section>

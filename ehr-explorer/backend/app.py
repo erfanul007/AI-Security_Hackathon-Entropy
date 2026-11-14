@@ -157,6 +157,12 @@ def write(conn, sql: str, args) -> sqlite3.Cursor:
         raise HTTPException(409, f"Conflict: {msg}")
 
 
+def fk_labels(t: str) -> str:
+    """Extra SELECT columns `<fk>_label` for table alias r."""
+    return "".join(f", (SELECT {label_sql(c['fk'])} FROM {c['fk']} x WHERE x.{META[c['fk']]['pk']} = r.{c['name']}) AS {c['name']}_label"
+                   for c in META[t]["columns"] if c["fk"])
+
+
 def fetch(conn, t: str, pk) -> dict:
     r = conn.execute(f"SELECT * FROM {t} WHERE {META[t]['pk']} = ?", (pk,)).fetchone()
     if r is None:
@@ -176,8 +182,7 @@ def list_rows(t: str, page: int = 1, q: str = "", sort: str = "", dir: str = "as
         pat = like(q)
         where = "WHERE " + " OR ".join(f"r.{c} LIKE ? ESCAPE '\\'" for c in text)
         args = [pat] * len(text)
-    labels = "".join(f", (SELECT {label_sql(c['fk'])} FROM {c['fk']} x WHERE x.{META[c['fk']]['pk']} = r.{c['name']}) AS {c['name']}_label"
-                     for c in m["columns"] if c["fk"])
+    labels = fk_labels(t)
     order = f"ORDER BY r.{sort or m['pk']} {dir}"
     with connect() as conn:
         total = conn.execute(f"SELECT COUNT(*) FROM {t} r {where}", args).fetchone()[0]
@@ -188,9 +193,12 @@ def list_rows(t: str, page: int = 1, q: str = "", sort: str = "", dir: str = "as
 
 @app.get("/api/tables/{t}/{pk}")
 def get_row(t: str, pk: str):
-    tmeta(t)
+    pkcol = tmeta(t)["pk"]
     with connect() as conn:
-        return fetch(conn, t, pk)
+        r = conn.execute(f"SELECT r.*{fk_labels(t)} FROM {t} r WHERE r.{pkcol} = ?", (pk,)).fetchone()
+    if r is None:
+        raise HTTPException(404, "Not found")
+    return dict(r)
 
 
 @app.post("/api/tables/{t}", status_code=201)

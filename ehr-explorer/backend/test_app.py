@@ -302,3 +302,12 @@ def test_switch_env(client, monkeypatch, tmp_path):
     assert (app.DATA / "prod.db").exists()
     assert client.put("/api/env", json={"env": "staging"}).status_code == 400
     assert client.get("/api/env").json() == {"env": "prod"}
+
+
+def test_get_row_has_fk_labels(client):
+    f, d, _, prov = org(client)
+    pid = post(client, "patients", PATIENT)["patient_id"]
+    e = encounter(client, pid, f, d, attending_provider_id=prov)
+    r = client.get(f"/api/tables/encounters/{e['encounter_id']}").json()
+    assert r["patient_id_label"] == "Lee, Ann · DEMO000001"
+    assert r["attending_provider_id_label"] == "Doe, Jane · MD"

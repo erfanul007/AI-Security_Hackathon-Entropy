@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react'
-import { type Col, type Meta, type Row, get, kind, send, show } from './api'
+import { type Col, type Meta, type Row, get, kind, nice, send, show } from './api'
 
 type Props = { t: string; meta: Meta; row: Row | null; onDone: (changed: boolean) => void }
 
@@ -42,17 +42,17 @@ export default function RowForm({ t, meta, row, onDone }: Props) {
   }
 
   return (
-    <aside className="drawer" aria-label={`${isNew ? 'Add' : 'Edit'} ${t}`}>
+    <aside className="drawer" aria-label={`${isNew ? 'Add' : 'Edit'} ${nice(t)}`}>
       <form onSubmit={save}>
         <header className="drawer-head">
-          <h2>{isNew ? `Add ${t}` : `${t} #${show(row![pk])}`}</h2>
+          <h2>{isNew ? `Add ${nice(t)}` : `${nice(t)} #${show(row![pk])}`}</h2>
           <button type="button" className="ghost" onClick={() => onDone(false)} aria-label="Close">✕</button>
         </header>
         {error && <p className="error" role="alert">{error}</p>}
-        {!isNew && <p className="muted">{pk}: {show(row![pk])}</p>}
+        {!isNew && <p className="muted">{nice(pk)}: {show(row![pk])}</p>}
         {editable.map(c => (
           <label key={c.name} className={kind(c.type) === 'BOOLEAN' ? 'field check' : 'field'}>
-            <span>{c.name}{c.required && <b aria-label="required"> *</b>}</span>
+            <span>{nice(c.name, !!c.fk)}{c.required && <b aria-label="required"> *</b>}</span>
             <Field t={t} col={c} value={values[c.name]} label={show(values[`${c.name}_label`])} onChange={v => set(c.name, v)} />
           </label>
         ))}
@@ -113,9 +113,9 @@ function FkInput({ target, value, label, onChange }: { target: string; value: un
 
   return (
     <>
-      <input value={text} list={listId} placeholder={`Search ${target}…`} onChange={e => pick(e.target.value)} />
+      <input value={text} list={listId} placeholder={`Search ${nice(target)}…`} onChange={e => pick(e.target.value)} />
       <datalist id={listId}>{opts.map(o => <option key={show(o.id)} value={o.label} />)}</datalist>
-      <small className="muted">id: {show(value) || '—'}</small>
+      {!text && value != null && <small className="muted">ID {show(value)}</small>}
     </>
   )
 }

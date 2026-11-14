@@ -15,7 +15,7 @@ button:hover { border-color: var(--accent); }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 input, select, textarea { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 6px 8px; width: 100%; }
 
-.app { display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 48px 1fr; height: 100vh; }
+.app { display: grid; grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: 48px 1fr; height: 100vh; }
 .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; color: #fff; background: var(--demo); }
 .badge.prod { background: var(--prod); }
@@ -56,7 +56,7 @@ tbody tr:hover { background: var(--accent-soft); }
 .danger { color: var(--danger); margin-left: auto; }
 
 @media (max-width: 700px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: 48px auto 1fr; }
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px auto 1fr; }
   .sidebar { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--line); }
 }
 
@@ -65,7 +65,7 @@ tbody tr:hover { background: var(--accent-soft); }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 4px; }
 .kpi span { color: var(--muted); font-size: 12px; }
 .kpi strong { font-size: 24px; font-variant-numeric: tabular-nums; }
-.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0 0 12px; }
 .card h2 { font-size: 14px; margin: 0 0 8px; }
 .chart { margin: 0; }
@@ -84,3 +84,5 @@ details { border-bottom: 1px solid var(--line); padding: 6px 0; }
 .flag { color: var(--danger); }
 @media (max-width: 700px) { .charts { grid-template-columns: 1fr; } }
 select.badge { width: auto; border: 0; cursor: pointer; padding: 2px 6px; }
+.back { display: inline-block; margin-bottom: 8px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

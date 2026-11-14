@@ -24,14 +24,34 @@ ICD = [("E11.9", "Type 2 diabetes mellitus without complications"), ("I10", "Ess
        ("F41.1", "Generalized anxiety disorder"), ("J06.9", "Acute upper respiratory infection, unspecified"),
        ("N39.0", "Urinary tract infection, site not specified"), ("F11.20", "Opioid dependence, uncomplicated"),
        ("I48.91", "Unspecified atrial fibrillation"), ("K21.9", "Gastro-esophageal reflux disease without esophagitis")]
-MEDS = [("Metformin 500 mg tablet", 0), ("Lisinopril 10 mg tablet", 0), ("Atorvastatin 20 mg tablet", 0),
-        ("Albuterol 90 mcg inhaler", 0), ("Sertraline 50 mg tablet", 0), ("Omeprazole 20 mg capsule", 0),
-        ("Buprenorphine-naloxone 8-2 mg film", 1), ("Oxycodone 5 mg tablet", 1), ("Apixaban 5 mg tablet", 0)]
+MEDS = [("Metformin 500 mg tablet", 0, "oral"), ("Lisinopril 10 mg tablet", 0, "oral"),
+        ("Atorvastatin 20 mg tablet", 0, "oral"), ("Albuterol 90 mcg inhaler", 0, "inhalation"),
+        ("Sertraline 50 mg tablet", 0, "oral"), ("Omeprazole 20 mg capsule", 0, "oral"),
+        ("Buprenorphine-naloxone 8-2 mg film", 1, "sublingual"), ("Oxycodone 5 mg tablet", 1, "oral"),
+        ("Apixaban 5 mg tablet", 0, "oral")]
 VACCINES = [("141", "Influenza, seasonal, injectable"), ("213", "SARS-COV-2 (COVID-19) vaccine"),
             ("115", "Tdap"), ("33", "Pneumococcal polysaccharide PPV23")]
-LABS = [("2345-7", "Glucose", "mg/dL", "70-99", 70, 180), ("4548-4", "Hemoglobin A1c", "%", "4.0-5.6", 4.5, 10),
-        ("2093-3", "Cholesterol, total", "mg/dL", "<200", 140, 280), ("718-7", "Hemoglobin", "g/dL", "12.0-17.5", 9, 17),
-        ("3016-3", "TSH", "uIU/mL", "0.4-4.0", 0.2, 6)]
+# panel -> tests as (loinc, name, unit, normal low, normal high, draw low, draw high); flags follow the normal range
+PANELS = {
+    "Basic metabolic panel": [("2345-7", "Glucose", "mg/dL", 70, 99, 65, 180), ("2951-2", "Sodium", "mmol/L", 136, 145, 131, 149),
+                              ("2823-3", "Potassium", "mmol/L", 3.5, 5.1, 3.1, 5.6)],
+    "Hemoglobin A1c": [("4548-4", "Hemoglobin A1c", "%", 4.0, 5.6, 4.6, 10.5)],
+    "Lipid panel": [("2093-3", "Cholesterol, total", "mg/dL", 0, 199, 140, 280), ("13457-7", "LDL cholesterol", "mg/dL", 0, 99, 60, 190),
+                    ("2085-9", "HDL cholesterol", "mg/dL", 40, 100, 28, 80)],
+    "TSH": [("3016-3", "TSH", "uIU/mL", 0.4, 4.0, 0.2, 6.5)],
+    "CBC with automated differential": [("718-7", "Hemoglobin", "g/dL", 12.0, 17.5, 9.5, 17.0),
+                                        ("6690-2", "WBC", "10*3/uL", 4.0, 11.0, 3.2, 14.0),
+                                        ("777-3", "Platelets", "10*3/uL", 150, 400, 120, 450)],
+    "Ferritin": [("2276-4", "Ferritin", "ng/mL", 30, 400, 10, 480)],
+}
+# instrument -> (max score, [(min score, interpretation)] highest band first)
+SCREENS = {
+    "PHQ-2": (6, [(3, "Positive"), (0, "Negative")]),
+    "AUDIT-C": (12, [(4, "Positive"), (0, "Negative")]),
+    "GAD-7": (21, [(15, "Severe anxiety"), (10, "Moderate anxiety"), (5, "Mild anxiety"), (0, "Minimal anxiety")]),
+    "PHQ-9": (27, [(20, "Severe depression"), (15, "Moderately severe depression"), (10, "Moderate depression"),
+                   (5, "Mild depression"), (0, "Minimal depression")]),
+}
 
 
 def seed(path: Path) -> None:
@@ -179,7 +199,7 @@ def seed(path: Path) -> None:
         pid = R.choice(patients)
         etype = R.choice(G["encounters.encounter_type"])
         d = R.choice(depts)
-        start = datetime.combine(day(R.randint(0, 364)), datetime.min.time()) + timedelta(hours=R.randint(7, 18))
+        start = datetime.combine(day(R.randint(1, 365)), datetime.min.time()) + timedelta(hours=R.randint(7, 18))
         end = start + (timedelta(days=R.randint(1, 5)) if etype == "Inpatient" else timedelta(minutes=R.randint(20, 240)))
         prov = R.choice(providers)
         eid = ins("encounters", csn=f"DEMO-{i:06d}", patient_id=pid, facility_id=dept_fac[d], department_id=d,
@@ -218,9 +238,9 @@ def seed(path: Path) -> None:
             status="Active", noted_by_provider_id=R.choice(providers))
     for _ in range(120):
         eid, pid, start, _, prov = R.choice(encs)
-        name, controlled = R.choice(MEDS)
+        name, controlled, route = R.choice(MEDS)
         ins("medications", patient_id=pid, encounter_id=eid, prescriber_provider_id=prov, medication_name=name,
-            dose=name.split()[1] + " " + name.split()[2], route=pick("medications.route"), frequency="daily",
+            dose=name.split()[1] + " " + name.split()[2], route=route, frequency="daily",
             sig="Take as directed", quantity=30, refills=R.randint(0, 3), start_date=start.date().isoformat(),
             end_date=None, status=pick("medications.status"), indication_icd10=R.choice(ICD)[0],
             pharmacy="Demo Pharmacy", is_controlled_substance=controlled)
@@ -234,25 +254,30 @@ def seed(path: Path) -> None:
     for _ in range(100):
         eid, pid, start, _, prov = R.choice(encs)
         system = pick("procedures.code_system")
-        ins("procedures", encounter_id=eid, patient_id=pid, code="99213" if system == "CPT" else "G0439",
-            code_system=system, description="Demo procedure", units=1, performed_datetime=start.isoformat(),
+        cpt = system == "CPT"
+        ins("procedures", encounter_id=eid, patient_id=pid, code="99213" if cpt else "G0439", code_system=system,
+            description="Office visit, established patient, low complexity" if cpt else "Annual wellness visit, subsequent", units=1, performed_datetime=start.isoformat(),
             performing_provider_id=prov)
     for i in range(1, 121):
         eid, pid, start, _, prov = R.choice(encs)
         status = pick("lab_orders.status")
         oid = ins("lab_orders", accession_number=f"DEMO-L{i:06d}", encounter_id=eid, patient_id=pid,
-                  ordering_provider_id=prov, panel_name=R.choice(G["lab_orders.panel_name"]), cpt_code="80053",
+                  ordering_provider_id=prov, panel_name=(panel := R.choice(list(PANELS))), cpt_code="80053",
                   order_datetime=start.isoformat(), collected_datetime=(start + timedelta(minutes=30)).isoformat(),
                   resulted_datetime=(start + timedelta(hours=4)).isoformat(), status=status)
-        for loinc, test, unit, ref, lo, hi in R.sample(LABS, 2 if i % 2 else 3):
+        for loinc, test, unit, nlo, nhi, lo, hi in PANELS[panel]:
+            value = round(R.uniform(lo, hi), 1)
             ins("lab_results", lab_order_id=oid, patient_id=pid, loinc_code=loinc, test_name=test,
-                value_numeric=round(R.uniform(lo, hi), 1), unit=unit, reference_range=ref,
-                abnormal_flag=pick("lab_results.abnormal_flag") if R.random() < 0.3 else None,
+                value_numeric=value, unit=unit, reference_range=f"<{nhi + 1}" if nlo == 0 else f"{nlo}-{nhi}",
+                abnormal_flag="H" if value > nhi else "L" if value < nlo else None,
                 resulted_datetime=(start + timedelta(hours=4)).isoformat())
     for _ in range(80):
         eid, pid, start, _, _ = R.choice(encs)
-        ins("screenings", encounter_id=eid, patient_id=pid, instrument=pick("screenings.instrument"), loinc_code="44261-6",
-            score=R.randint(0, 20), interpretation=pick("screenings.interpretation"), administered_datetime=start.isoformat())
+        instrument = R.choice(list(SCREENS))
+        top, bands = SCREENS[instrument]
+        score = R.randint(0, top)
+        ins("screenings", encounter_id=eid, patient_id=pid, instrument=instrument, loinc_code="44261-6", score=score,
+            interpretation=next(text for floor, text in bands if score >= floor), administered_datetime=start.isoformat())
 
     # Billing
     for i in range(1, 21):

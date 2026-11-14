@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { type Row, get, show } from './api'
+import { type Meta, type Row, fmt, get, nice, show } from './api'
 
 type Bundle = Record<string, Row | Row[] | null> & { patient: Row; lab_orders: (Row & { results: Row[] })[] }
 
-type Props = { id: number; onEdit: (t: string, pk: string) => void }
+type Props = { id: number; meta: Meta; onBack: () => void; onEdit: (t: string, pk: string) => void }
 
 // [bundle key, table, pk, columns to show] in §8 order
 const SECTIONS: [string, string, string, string[]][] = [
@@ -24,7 +24,8 @@ const SECTIONS: [string, string, string, string[]][] = [
 const DEMOGRAPHICS = ['mrn', 'date_of_birth', 'sex_at_birth', 'gender_identity', 'preferred_language', 'marital_status',
   'city', 'county', 'mobile_phone', 'email', 'confidentiality_level', 'portal_active']
 
-export default function PatientDetail({ id, onEdit }: Props) {
+export default function PatientDetail({ id, meta, onBack, onEdit }: Props) {
+  const col = (t: string, c: string) => meta.tables[t]?.columns.find(x => x.name === c)
   const [b, setB] = useState<Bundle | null>(null)
   const [error, setError] = useState('')
 
@@ -42,48 +43,49 @@ export default function PatientDetail({ id, onEdit }: Props) {
 
   return (
     <article className="patient">
+      <button className="link back" onClick={onBack}>← Patients</button>
       <header className="toolbar">
         <h1>{show(p.last_name)}, {show(p.first_name)} <span className="muted">· {show(p.mrn)}</span></h1>
         <Edit t="patients" pk={p.patient_id} />
       </header>
       <dl className="kv">
-        {DEMOGRAPHICS.map(k => <div key={k}><dt>{k}</dt><dd>{show(p[k]) || '—'}</dd></div>)}
+        {DEMOGRAPHICS.map(k => <div key={k}><dt>{nice(k)}</dt><dd>{fmt(col('patients', k), p[k]) || '—'}</dd></div>)}
         <div><dt>PCP</dt><dd>{pcp ? show(pcp.label) : '—'}</dd></div>
       </dl>
 
-      {SECTIONS.slice(0, 4).map(s => <Section key={s[0]} spec={s} rows={b[s[0]] as Row[]} Edit={Edit} />)}
+      {SECTIONS.slice(0, 4).map(s => <Section key={s[0]} spec={s} rows={b[s[0]] as Row[]} Edit={Edit} meta={meta} />)}
 
       <section className="card">
-        <h2>social_history {social && <Edit t="social_history" pk={social.patient_id} />}</h2>
+        <h2>Social history {social && <Edit t="social_history" pk={social.patient_id} />}</h2>
         {social ? (
           <dl className="kv">
             {Object.entries(social).filter(([k]) => k !== 'patient_id').map(([k, v]) => (
-              <div key={k}><dt>{k}</dt><dd>{show(v) || '—'}</dd></div>
+              <div key={k}><dt>{nice(k)}</dt><dd>{fmt(col('social_history', k), v) || '—'}</dd></div>
             ))}
           </dl>
         ) : <p className="muted">None recorded</p>}
       </section>
 
-      <Section spec={SECTIONS[4]} rows={b.encounters as Row[]} Edit={Edit} />
+      <Section spec={SECTIONS[4]} rows={b.encounters as Row[]} Edit={Edit} meta={meta} />
 
       <section className="card">
-        <h2>clinical_notes <span className="muted">({(b.notes as Row[]).length})</span></h2>
+        <h2>Clinical notes <span className="muted">({(b.notes as Row[]).length})</span></h2>
         {(b.notes as Row[]).map(n => (
           <details key={show(n.note_id)}>
-            <summary>{show(n.note_datetime).slice(0, 16)} · {show(n.note_type)} {n.is_sensitive ? '· sensitive' : ''} <Edit t="clinical_notes" pk={n.note_id} /></summary>
+            <summary>{fmt(col('clinical_notes', 'note_datetime'), n.note_datetime)} · {show(n.note_type)} {n.is_sensitive ? '· sensitive' : ''} <Edit t="clinical_notes" pk={n.note_id} /></summary>
             <p className="note">{show(n.note_text)}</p>
           </details>
         ))}
         {(b.notes as Row[]).length === 0 && <p className="muted">None</p>}
       </section>
 
-      {SECTIONS.slice(5, 8).map(s => <Section key={s[0]} spec={s} rows={b[s[0]] as Row[]} Edit={Edit} />)}
+      {SECTIONS.slice(5, 8).map(s => <Section key={s[0]} spec={s} rows={b[s[0]] as Row[]} Edit={Edit} meta={meta} />)}
 
       <section className="card">
-        <h2>lab_orders → results <span className="muted">({b.lab_orders.length})</span></h2>
+        <h2>Lab orders & results <span className="muted">({b.lab_orders.length})</span></h2>
         {b.lab_orders.map(o => (
           <div key={show(o.lab_order_id)} className="lab">
-            <p><strong>{show(o.panel_name)}</strong> · {show(o.order_datetime).slice(0, 16)} · {show(o.status)} <Edit t="lab_orders" pk={o.lab_order_id} /></p>
+            <p><strong>{show(o.panel_name)}</strong> · {fmt(col('lab_orders', 'order_datetime'), o.order_datetime)} · {show(o.status)} <Edit t="lab_orders" pk={o.lab_order_id} /></p>
             <ul>
               {o.results.map(r => (
                 <li key={show(r.lab_result_id)}>
@@ -97,25 +99,26 @@ export default function PatientDetail({ id, onEdit }: Props) {
         {b.lab_orders.length === 0 && <p className="muted">None</p>}
       </section>
 
-      {SECTIONS.slice(8).map(s => <Section key={s[0]} spec={s} rows={b[s[0]] as Row[]} Edit={Edit} />)}
+      {SECTIONS.slice(8).map(s => <Section key={s[0]} spec={s} rows={b[s[0]] as Row[]} Edit={Edit} meta={meta} />)}
     </article>
   )
 }
 
-function Section({ spec: [key, t, pk, cols], rows, Edit }: {
-  spec: [string, string, string, string[]]; rows: Row[]; Edit: (p: { t: string; pk: unknown }) => React.JSX.Element
+function Section({ spec: [key, t, pk, cols], rows, Edit, meta }: {
+  spec: [string, string, string, string[]]; rows: Row[]; Edit: (p: { t: string; pk: unknown }) => React.JSX.Element; meta: Meta
 }) {
+  const col = (c: string) => meta.tables[t].columns.find(x => x.name === c)
   return (
     <section className="card">
-      <h2>{t} <span className="muted">({rows.length})</span></h2>
+      <h2>{nice(t)} <span className="muted">({rows.length})</span></h2>
       {rows.length === 0 ? <p className="muted">None</p> : (
         <div className="scroll">
           <table aria-label={key}>
-            <thead><tr>{cols.map(c => <th key={c}>{c}</th>)}<th /></tr></thead>
+            <thead><tr>{cols.map(c => <th key={c}>{nice(c)}</th>)}<th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {rows.map(r => (
                 <tr key={show(r[pk])} className="static">
-                  {cols.map(c => <td key={c}>{show(r[c])}</td>)}
+                  {cols.map(c => <td key={c}>{fmt(col(c), r[c])}</td>)}
                   <td><Edit t={t} pk={r[pk]} /></td>
                 </tr>
               ))}

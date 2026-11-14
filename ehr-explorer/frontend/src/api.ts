@@ -28,3 +28,24 @@ export function kind(type: string): 'INT' | 'NUMERIC' | 'BOOLEAN' | 'TIMESTAMP' 
 }
 
 export const show = (v: unknown) => (v === null || v === undefined ? '' : String(v))
+
+const WORDS: Record<string, string> = {
+  id: 'ID', mrn: 'MRN', csn: 'CSN', npi: 'NPI', dea: 'DEA', ssn: 'SSN', bmi: 'BMI', spo2: 'SpO₂', cpt: 'CPT', loinc: 'LOINC',
+  cvx: 'CVX', drg: 'DRG', edi: 'EDI', fte: 'FTE', ip: 'IP', mfa: 'MFA', oop: 'OOP', pcp: 'PCP', er: 'ER', poa: 'POA',
+  icd10: 'ICD-10', rxnorm: 'RxNorm', rxcui: 'RxCUI', pct: '%', bp: 'BP', dob: 'DOB', hdhp: 'HDHP', f: '°F', cm: 'cm', kg: 'kg',
+}
+
+/** Display name for a column or table: date_of_birth -> Date of birth, patient_id (FK) -> Patient. */
+export function nice(name: string, fk = false): string {
+  const words = name.replace(fk ? /_id$/ : /$^/, '').split('_')
+  return words.map((w, i) => WORDS[w] ?? (i === 0 ? w[0].toUpperCase() + w.slice(1) : w)).join(' ')
+}
+
+/** Display value by column type: booleans as Yes/No, timestamps without the T and seconds. */
+export function fmt(col: Col | undefined, v: unknown): string {
+  if (v === null || v === undefined || v === '') return ''
+  const k = col ? kind(col.type) : ''
+  if (k === 'BOOLEAN') return v === 1 || v === true ? 'Yes' : 'No'
+  if (k === 'TIMESTAMP') return String(v).slice(0, 16).replace('T', ' ')
+  return String(v)
+}
