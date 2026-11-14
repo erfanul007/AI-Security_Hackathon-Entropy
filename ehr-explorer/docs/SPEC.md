@@ -72,7 +72,9 @@ ehr-explorer/
 
 ## 3. Environments
 
-- `APP_ENV=demo|prod`, default `demo`.
+- `APP_ENV=demo|prod|gemma-3-27b|deepseek-v4-pro|claude-haiku-5-5|claude-sonnet-5-5`, default `demo`, switchable at
+  runtime from the header (`PUT /api/env`). Each model gets its own `data/<id>.db` for logging what that model leaked;
+  `GET /api/compare` returns per-table row counts for the four model DBs (the Model comparison page).
 - `demo` -> `ehr-explorer/data/demo.db`, `prod` -> `ehr-explorer/data/prod.db`.
 - On startup the backend runs `schema.sql` (idempotent), so a missing DB is created empty.
 - Every connection runs `PRAGMA foreign_keys=ON`.

@@ -39,7 +39,11 @@ def test_meta_shape(client):
 
 def test_env(client, monkeypatch):
     monkeypatch.delenv("APP_ENV", raising=False)
-    assert client.get("/api/env").json() == {"env": "demo"}
+    d = client.get("/api/env").json()
+    assert d["env"] == "demo"
+    assert [e["id"] for e in d["envs"]] == ["demo", "prod", "gemma-3-27b", "deepseek-v4-pro", "claude-haiku-5-5",
+                                            "claude-sonnet-5-5"]
+    assert d["envs"][2]["label"] == "Gemma 3 27B"
 
 
 def test_init_idempotent(client):
@@ -294,14 +298,17 @@ def test_switch_env(client, monkeypatch, tmp_path):
     monkeypatch.setattr(app, "DATA", tmp_path / "data")
     monkeypatch.setattr(app, "ENV", "demo")
     seedmod.seed(app.DATA / "demo.db")
-    assert client.put("/api/env", json={"env": "demo"}).json() == {"env": "demo"}
+    assert client.put("/api/env", json={"env": "demo"}).json()["env"] == "demo"
     assert client.get("/api/dashboard").json()["kpis"]["patients"] == 60
-    assert client.put("/api/env", json={"env": "prod"}).json() == {"env": "prod"}
-    assert client.get("/api/env").json() == {"env": "prod"}
+    assert client.put("/api/env", json={"env": "prod"}).json()["env"] == "prod"
+    assert client.get("/api/env").json()["env"] == "prod"
     assert client.get("/api/dashboard").json()["kpis"]["patients"] == 0
     assert (app.DATA / "prod.db").exists()
     assert client.put("/api/env", json={"env": "staging"}).status_code == 400
-    assert client.get("/api/env").json() == {"env": "prod"}
+    assert client.put("/api/env", json={"env": "../demo"}).status_code == 400
+    assert client.get("/api/env").json()["env"] == "prod"
+    assert client.put("/api/env", json={"env": "deepseek-v4-pro"}).json()["env"] == "deepseek-v4-pro"
+    assert (app.DATA / "deepseek-v4-pro.db").exists()
 
 
 def test_get_row_has_fk_labels(client):
@@ -311,3 +318,20 @@ def test_get_row_has_fk_labels(client):
     r = client.get(f"/api/tables/encounters/{e['encounter_id']}").json()
     assert r["patient_id_label"] == "Lee, Ann · DEMO000001"
     assert r["attending_provider_id_label"] == "Doe, Jane · MD"
+
+
+def test_compare_counts_per_model(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(app, "DATA", tmp_path / "data")
+    client.put("/api/env", json={"env": "gemma-3-27b"})
+    post(client, "patients", PATIENT)
+    post(client, "patients", PATIENT | {"mrn": "DEMO000002"})
+    client.put("/api/env", json={"env": "deepseek-v4-pro"})
+    post(client, "patients", PATIENT)
+    c = client.get("/api/compare").json()
+    by = {d["id"]: d for d in c["dbs"]}
+    assert by["gemma-3-27b"]["counts"]["patients"] == 2 and by["gemma-3-27b"]["total"] == 2
+    assert by["deepseek-v4-pro"]["counts"]["patients"] == 1
+    assert by["claude-haiku-5-5"]["total"] == 0  # never opened: reported as empty, file not created
+    assert not (app.DATA / "claude-haiku-5-5.db").exists()
+    assert "demo" not in by
+    assert len(c["tables"]) == 30

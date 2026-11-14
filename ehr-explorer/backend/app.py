@@ -11,7 +11,13 @@ import rules
 
 HERE = Path(__file__).parent
 DATA = HERE.parent / "data"
+# one DB per target model, so each model's leaked records are kept and counted separately
+MODELS = {"gemma-3-27b": "Gemma 3 27B", "deepseek-v4-pro": "DeepSeek V4 Pro",
+          "claude-haiku-5-5": "Claude Haiku 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5"}
+ENVS = {"demo": "Demo (seeded)", "prod": "Prod (empty)"} | MODELS
 ENV = os.environ.get("APP_ENV", "demo")
+if ENV not in ENVS:
+    raise SystemExit(f"APP_ENV must be one of: {', '.join(ENVS)}")
 DB_PATH = DATA / f"{ENV}.db"
 META: dict = {}
 
@@ -51,19 +57,38 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/api/env")
 def env():
-    return {"env": ENV}
+    return {"env": ENV, "envs": [{"id": k, "label": v, "model": k in MODELS} for k, v in ENVS.items()]}
 
 
 @app.put("/api/env")
 def switch_env(body: dict = Body(...)):
-    """Point the server at the demo or prod DB. shortcut: one global switch for every open tab, fine for a local single-user app."""
+    """Point the server at another DB from ENVS. shortcut: one global switch for every open tab, fine for a local single-user app."""
     global ENV, DB_PATH
-    if body.get("env") not in ("demo", "prod"):
-        raise HTTPException(400, "env must be demo or prod")
+    if body.get("env") not in ENVS:
+        raise HTTPException(400, f"env must be one of: {', '.join(ENVS)}")
     ENV = body["env"]
     DB_PATH = DATA / f"{ENV}.db"
     init_db()
-    return {"env": ENV}
+    return env()
+
+
+@app.get("/api/compare")
+def compare():
+    """Row counts per table in each model DB. Missing DBs count as empty and are not created."""
+    tables = [t for ts in rules.GROUPS.values() for t in ts]
+    dbs = []
+    for k, label in MODELS.items():
+        path = DATA / f"{k}.db"
+        counts = dict.fromkeys(tables, 0)
+        if path.exists():
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            try:
+                have = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                counts |= {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables if t in have}
+            finally:
+                conn.close()
+        dbs.append({"id": k, "label": label, "counts": counts, "total": sum(counts.values())})
+    return {"tables": tables, "groups": rules.GROUPS, "dbs": dbs}
 
 
 @app.get("/api/meta")

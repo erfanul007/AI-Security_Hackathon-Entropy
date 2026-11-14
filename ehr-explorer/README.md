@@ -19,7 +19,9 @@ Tests: `cd backend && .venv/bin/pytest -q`.
 ## Demo walkthrough (about 3 minutes)
 
 1. **Dashboard**: counts, a year of encounters by class, payer mix, claim status, and charged versus paid.
-2. **DEMO / PROD** dropdown in the header: switch to PROD to show the empty database, then switch back.
+2. **Database** dropdown in the header: each target model (Gemma 3 27B, DeepSeek V4 Pro, Claude Haiku 5.5,
+   Claude Sonnet 5.5) has its own database for logging what that model leaked. Demo is the seeded data and Prod is empty.
+   **Model comparison** in the sidebar counts the logged records per model and per table.
 3. **Patients**: search a last name, click a row to open the chart. It shows demographics, coverage,
    problems, encounters, collapsible notes, labs with H/L flags against the reference range, vitals and claims.
 4. Click **edit** on any row in the chart. The side form shows names for linked records, dropdowns for fixed

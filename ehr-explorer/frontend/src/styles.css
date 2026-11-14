@@ -86,3 +86,13 @@ details { border-bottom: 1px solid var(--line); padding: 6px 0; }
 select.badge { width: auto; border: 0; cursor: pointer; padding: 2px 6px; }
 .back { display: inline-block; margin-bottom: 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.db-switch { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; }
+.badge.model { background: var(--accent); }
+.badge option, .badge optgroup { color: var(--text); background: var(--panel); font-weight: 400; }
+.lede { margin: -4px 0 16px; max-width: 70ch; }
+.kpi small { font-size: 11px; }
+table.compare th, table.compare td { max-width: none; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.group th { position: static; background: var(--bg); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+td.top { font-weight: 700; }
+tr.total td { font-weight: 700; border-top: 2px solid var(--line); }
