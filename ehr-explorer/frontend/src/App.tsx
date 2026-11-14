@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { type Meta, get } from './api'
+import Dashboard from './Dashboard'
+import PatientDetail from './PatientDetail'
 import TableView from './TableView'
 
 export type View =
@@ -43,8 +45,10 @@ export default function App() {
           <TableView key={view.t + (view.editPk ?? '')} t={view.t} meta={meta} editPk={view.editPk}
             onPatient={id => setView({ kind: 'patient', id })} />
         )}
-        {view.kind === 'dashboard' && <p className="muted">Dashboard</p>}
-        {view.kind === 'patient' && <p className="muted">Patient #{view.id}</p>}
+        {view.kind === 'dashboard' && <Dashboard />}
+        {view.kind === 'patient' && (
+          <PatientDetail key={view.id} id={view.id} onEdit={(t, editPk) => setView({ kind: 'table', t, editPk })} />
+        )}
       </main>
     </div>
   )
