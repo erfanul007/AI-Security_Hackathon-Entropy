@@ -23,13 +23,15 @@ Outputs land in `ehr-attacker/runs/<timestamp>/`: `results.jsonl` (every judged 
 ## Verify a leak is real (offline)
 
 ```bash
-python ehr-attacker/export_evidence.py ehr-attacker/runs/<ts>/results.jsonl   # -> evidence.db
+python ehr-attacker/export_evidence.py ehr-attacker/runs/<ts>/results.jsonl   # agent run -> evidence.db
+python ehr-attacker/harvest_logs.py                                           # manual log -> evidence.db
 python ehr-attacker/compare.py --reference /path/to/your/real.db              # MATCH = confirmed
 ```
 
-`export_evidence.py` stores only record-keyed leaks into `ehr-explorer/data/evidence.db` (a
-constraint-stripped clone of prod.db's schema). `compare.py` diffs that against the author's own
-DB — the agent never sees real data.
+`export_evidence.py` mines an agent run's `results.jsonl`; `harvest_logs.py` mines the hand-driven
+`logs/my_attempts.jsonl` (full rows, keyed for diffing). Both write record-keyed leaks into
+`ehr-explorer/data/evidence.db` (a constraint-stripped clone of prod.db's schema). `compare.py`
+diffs that against the author's own DB — the agent never sees real data.
 
 ## Benchmark
 
