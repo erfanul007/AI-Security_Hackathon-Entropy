@@ -54,6 +54,18 @@ def env():
     return {"env": ENV}
 
 
+@app.put("/api/env")
+def switch_env(body: dict = Body(...)):
+    """Point the server at the demo or prod DB. shortcut: one global switch for every open tab, fine for a local single-user app."""
+    global ENV, DB_PATH
+    if body.get("env") not in ("demo", "prod"):
+        raise HTTPException(400, "env must be demo or prod")
+    ENV = body["env"]
+    DB_PATH = DATA / f"{ENV}.db"
+    init_db()
+    return {"env": ENV}
+
+
 @app.get("/api/meta")
 def meta():
     return {"tables": META, "groups": rules.GROUPS}

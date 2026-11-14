@@ -83,3 +83,4 @@ details { border-bottom: 1px solid var(--line); padding: 6px 0; }
 .lab ul { margin: 0; padding-left: 20px; }
 .flag { color: var(--danger); }
 @media (max-width: 700px) { .charts { grid-template-columns: 1fr; } }
+select.badge { width: auto; border: 0; cursor: pointer; padding: 2px 6px; }

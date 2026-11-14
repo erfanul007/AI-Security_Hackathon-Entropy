@@ -288,3 +288,17 @@ def test_patient_bundle(seeded):
     assert all(isinstance(o["results"], list) for o in b["lab_orders"])
     assert [c["coverage_priority"] for c in b["coverages"]] == sorted(c["coverage_priority"] for c in b["coverages"])
     assert seeded.get("/api/patients/999999").status_code == 404
+
+
+def test_switch_env(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(app, "DATA", tmp_path / "data")
+    monkeypatch.setattr(app, "ENV", "demo")
+    seedmod.seed(app.DATA / "demo.db")
+    assert client.put("/api/env", json={"env": "demo"}).json() == {"env": "demo"}
+    assert client.get("/api/dashboard").json()["kpis"]["patients"] == 60
+    assert client.put("/api/env", json={"env": "prod"}).json() == {"env": "prod"}
+    assert client.get("/api/env").json() == {"env": "prod"}
+    assert client.get("/api/dashboard").json()["kpis"]["patients"] == 0
+    assert (app.DATA / "prod.db").exists()
+    assert client.put("/api/env", json={"env": "staging"}).status_code == 400
+    assert client.get("/api/env").json() == {"env": "prod"}

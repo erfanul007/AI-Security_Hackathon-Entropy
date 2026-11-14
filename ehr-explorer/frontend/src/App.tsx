@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { type Meta, get } from './api'
+import { type Meta, get, send } from './api'
 import Dashboard from './Dashboard'
 import PatientDetail from './PatientDetail'
 import TableView from './TableView'
@@ -14,11 +14,24 @@ export default function App() {
   const [env, setEnv] = useState('')
   const [view, setView] = useState<View>({ kind: 'dashboard' })
   const [error, setError] = useState('')
+  const [epoch, setEpoch] = useState(0) // bumped on env switch so every view refetches
 
   useEffect(() => {
     get<Meta>('/api/meta').then(setMeta, e => setError(e.message))
     get<{ env: string }>('/api/env').then(d => setEnv(d.env), () => {})
   }, [])
+
+  async function switchEnv(next: string) {
+    try {
+      const d = await send<{ env: string }>('PUT', '/api/env', { env: next })
+      setEnv(d.env)
+      if (view.kind === 'patient') setView({ kind: 'dashboard' }) // that patient id may not exist in the other DB
+      setEpoch(n => n + 1)
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   const current = view.kind === 'table' ? view.t : view.kind
 
@@ -26,7 +39,12 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <strong>EHR Explorer</strong>
-        {env && <span className={`badge ${env}`}>{env.toUpperCase()}</span>}
+        {env && (
+          <select className={`badge ${env}`} value={env} onChange={e => switchEnv(e.target.value)} aria-label="Database">
+            <option value="demo">DEMO</option>
+            <option value="prod">PROD</option>
+          </select>
+        )}
       </header>
       <nav className="sidebar" aria-label="Tables">
         <button className={current === 'dashboard' ? 'active' : ''} onClick={() => setView({ kind: 'dashboard' })}>Dashboard</button>
@@ -39,7 +57,7 @@ export default function App() {
           </div>
         ))}
       </nav>
-      <main>
+      <main key={epoch}>
         {error && <p className="error" role="alert">{error}</p>}
         {meta && view.kind === 'table' && (
           <TableView key={view.t + (view.editPk ?? '')} t={view.t} meta={meta} editPk={view.editPk}
