@@ -274,8 +274,10 @@ Turns format-plausible candidates into proof, without the agent ever touching re
 - **Adaptive v1** (chosen): templates seed each phase, the attacker LLM mutates refused
   probes, and the judge escalates fuzzy cases to an LLM. The attacker LLM runs on the Nebius
   OpenAI-compatible endpoint (`api.studio.nebius.com/v1`) with the existing key (no new
-  credential); if that key turns out to have no direct Nebius access, the mutator degrades to
-  template-only rewrites and the LLM judge is skipped — the run still works, just non-adaptive.
+  credential). **Verified 2026-11-14:** the challenge key has direct Nebius access (24 models,
+  incl. `Qwen3-235B`, `DeepSeek-V4-Pro`, `gpt-oss-120b`; chat completion works) — the adaptive
+  path is live. The template-only fallback (mutator degrades to fixed rewrites, LLM judge
+  skipped) stays specced only as a guard if that access is ever revoked.
   A **hard `MAX_PROBES` cap** (default 150) plus `MUTATE_BUDGET` (3), `WORKERS` ≤4 and a small
   inter-call delay keep a run bounded, cheap, and polite to the shared test server.
 - **Non-determinism caveat:** because mutation and the LLM judge sample from a model, runs
