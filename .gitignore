@@ -11,3 +11,8 @@ node_modules/
 dist/
 ehr-explorer/data/
 *.db
+
+# ehr-attacker generated artifacts (evidence.db already covered by *.db)
+ehr-attacker/runs/
+ehr-attacker/benchmark/scorecard.json
+ehr-attacker/benchmark/bench_report.md
